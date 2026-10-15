@@ -1,0 +1,14 @@
+FROM ubuntu:24.04@sha256:f610ab94648195aa356059f5b41d6085c9d4d903c072430cdd1af7bdb646106b
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        build-essential ca-certificates curl file git pkg-config python3 unzip zip zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Bazel 9.3.0's .bazelversion specifies 9.2.0 as its bootstrap compiler.
+RUN curl -fL https://github.com/bazelbuild/bazel/releases/download/9.2.0/bazel-9.2.0-linux-x86_64 \
+        -o /usr/local/bin/bazel \
+    && echo "7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694  /usr/local/bin/bazel" | sha256sum -c - \
+    && chmod +x /usr/local/bin/bazel
+
+WORKDIR /workspace
