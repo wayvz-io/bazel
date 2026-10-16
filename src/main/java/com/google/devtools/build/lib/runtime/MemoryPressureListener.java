@@ -48,6 +48,7 @@ final class MemoryPressureListener implements NotificationListener {
   private final AtomicReference<GcThrashingDetector> gcThrashingDetector = new AtomicReference<>();
   private final AtomicReference<GcChurningDetector> gcChurnDetector = new AtomicReference<>();
   private final Executor executor;
+  private boolean gcNotificationsAvailable;
 
   private MemoryPressureListener(Executor executor) {
     this.executor = executor;
@@ -70,9 +71,8 @@ final class MemoryPressureListener implements NotificationListener {
     if (tenuredGcEmitters.isEmpty()) {
       if (gcBeans.isEmpty()) {
         logger.atWarning().log(
-            "No garbage collector MXBeans are available. Memory-pressure notifications are "
-                + "disabled, so optional caches cannot be limited based on heap usage and peak "
-                + "memory may be higher.");
+            "No garbage collector MXBeans are available. GC-driven cache trimming and "
+                + "GC-thrashing detection are unavailable.");
         return new MemoryPressureListener(executor);
       }
       var names =
@@ -99,11 +99,15 @@ final class MemoryPressureListener implements NotificationListener {
     }
     if (!subscribed) {
       logger.atWarning().log(
-          "Garbage collector MXBeans do not advertise GC notifications. Memory-pressure "
-              + "notifications are disabled, so optional caches cannot be limited based on heap "
-              + "usage and peak memory may be higher.");
+          "Garbage collector MXBeans do not advertise GC notifications. GC-driven cache "
+              + "trimming and GC-thrashing detection are unavailable.");
     }
+    memoryPressureListener.gcNotificationsAvailable = subscribed;
     return memoryPressureListener;
+  }
+
+  boolean hasGcNotifications() {
+    return gcNotificationsAvailable;
   }
 
   @VisibleForTesting

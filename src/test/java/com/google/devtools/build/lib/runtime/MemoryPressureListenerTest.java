@@ -63,11 +63,13 @@ public final class MemoryPressureListenerTest {
     when(mockBean.getMemoryPoolNames())
         .thenReturn(new String[] {"not tenured", TENURED_SPACE_NAME});
     when(mockBean.getNotificationInfo())
-        .thenReturn(new MBeanNotificationInfo[] {
-          new MBeanNotificationInfo(
-              new String[] {GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION},
-              Notification.class.getName(), "GC notification")
-        });
+        .thenReturn(
+            new MBeanNotificationInfo[] {
+              new MBeanNotificationInfo(
+                  new String[] {GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION},
+                  Notification.class.getName(),
+                  "GC notification")
+            });
     when(mockUselessBean.getMemoryPoolNames()).thenReturn(new String[] {"assistant", "adjunct"});
   }
 
@@ -107,6 +109,7 @@ public final class MemoryPressureListenerTest {
     try {
       MemoryPressureListener underTest =
           MemoryPressureListener.createFromBeans(ImmutableList.of(), directExecutor());
+      assertThat(underTest.hasGcNotifications()).isFalse();
 
       underTest.initForInvocation(
           eventBus, mock(GcThrashingDetector.class), mock(GcChurningDetector.class));
@@ -138,8 +141,10 @@ public final class MemoryPressureListenerTest {
     Logger logger = Logger.getLogger(MemoryPressureListener.class.getName());
     logger.addHandler(handler);
     try {
-      MemoryPressureListener.createFromBeans(
-          ImmutableList.of(mockUselessBean, mockBean), directExecutor());
+      MemoryPressureListener underTest =
+          MemoryPressureListener.createFromBeans(
+              ImmutableList.of(mockUselessBean, mockBean), directExecutor());
+      assertThat(underTest.hasGcNotifications()).isFalse();
       verify(mockBean, never()).addNotificationListener(any(), any(), any());
       assertThat(handler.getStoredLogRecords()).hasSize(1);
       assertThat(handler.getStoredLogRecords().get(0).getMessage())
@@ -154,6 +159,7 @@ public final class MemoryPressureListenerTest {
     MemoryPressureListener underTest =
         MemoryPressureListener.createFromBeans(
             ImmutableList.of(mockUselessBean, mockBean), directExecutor());
+    assertThat(underTest.hasGcNotifications()).isTrue();
     underTest.initForInvocation(
         eventBus, mock(GcThrashingDetector.class), mock(GcChurningDetector.class));
     verify(mockBean).addNotificationListener(underTest, null, null);

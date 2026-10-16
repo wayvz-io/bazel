@@ -66,7 +66,7 @@ let
         ${lib.concatMapStringsSep "\n" (patch: "patch -p1 < ${patch}") (
           lib.filter (patch: !(lib.hasSuffix "-bazel_rc.patch" (toString patch))) bootstrap.patches
         )}
-        patchShebangs tools/test
+        ${python3}/bin/python3 ${./portable-test-shells.py} "$out"
         cat ${
           pkgs.replaceVars ./rules-python-shebang.patch { python = "${python3}/bin/python3"; }
         } >> third_party/rules_python.patch
@@ -120,7 +120,9 @@ let
       "--extra_toolchains=@@rules_java++toolchains+local_jdk//:all"
       "--lockfile_mode=off"
       "--stamp"
-      "--embed_label=${version}-native-${edition}"
+      # Feature detection and extension lock digests must match the upstream release.
+      # The Nix output name identifies the runtime edition.
+      "--embed_label=${version}"
       "--workspace_status_command=${pkgs.writeShellScript "native-bazel-build-status" ''
         printf 'BUILD_USER nix\nBUILD_HOST nix\n'
       ''}"
@@ -198,6 +200,7 @@ let
         mkdir repo_cache
         ${pkgs.lndir}/bin/lndir -silent ${smokeRepositoryCache} repo_cache
         ${bash}/bin/bash ${./smoke.sh} ${nativePackage}/bin/nbazel ${registry} "$PWD/repo_cache"
+        ${bash}/bin/bash ${./heap-pressure-smoke.sh} ${nativePackage}/bin/nbazel ${registry} "$PWD/repo_cache"
         touch $out
       '';
     };
