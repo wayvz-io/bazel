@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import javax.management.MBeanNotificationInfo;
 import javax.management.Notification;
 import javax.management.NotificationEmitter;
 import org.junit.Before;
@@ -61,6 +62,12 @@ public final class MemoryPressureListenerTest {
   public void initMocks() {
     when(mockBean.getMemoryPoolNames())
         .thenReturn(new String[] {"not tenured", TENURED_SPACE_NAME});
+    when(mockBean.getNotificationInfo())
+        .thenReturn(new MBeanNotificationInfo[] {
+          new MBeanNotificationInfo(
+              new String[] {GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION},
+              Notification.class.getName(), "GC notification")
+        });
     when(mockUselessBean.getMemoryPoolNames()).thenReturn(new String[] {"assistant", "adjunct"});
   }
 
@@ -110,6 +117,33 @@ public final class MemoryPressureListenerTest {
       assertThat(warning.getLevel()).isEqualTo(Level.WARNING);
       assertThat(warning.getMessage())
           .contains("optional caches cannot be limited based on heap usage");
+    } finally {
+      logger.removeHandler(handler);
+    }
+  }
+
+  @Test
+  public void graalSerialGcWithoutNotificationsWarns() {
+    when(mockBean.getMemoryPoolNames())
+        .thenReturn(new String[] {"eden space", "survivor space", "old generation space"});
+    when(mockUselessBean.getMemoryPoolNames())
+        .thenReturn(new String[] {"eden space", "survivor space"});
+    when(mockBean.getNotificationInfo()).thenReturn(new MBeanNotificationInfo[0]);
+    assertThat(
+            MemoryPressureListener.findTenuredCollectorBeans(
+                ImmutableList.of(mockUselessBean, mockBean)))
+        .containsExactly(mockBean);
+
+    TestLogHandler handler = new TestLogHandler();
+    Logger logger = Logger.getLogger(MemoryPressureListener.class.getName());
+    logger.addHandler(handler);
+    try {
+      MemoryPressureListener.createFromBeans(
+          ImmutableList.of(mockUselessBean, mockBean), directExecutor());
+      verify(mockBean, never()).addNotificationListener(any(), any(), any());
+      assertThat(handler.getStoredLogRecords()).hasSize(1);
+      assertThat(handler.getStoredLogRecords().get(0).getMessage())
+          .contains("do not advertise GC notifications");
     } finally {
       logger.removeHandler(handler);
     }
@@ -254,6 +288,8 @@ public final class MemoryPressureListenerTest {
   @Test
   public void findsTenuredSpaceWithNonZeroMaxSize() {
     NotificationBean anotherMockBean = mock(NotificationBean.class);
+    MBeanNotificationInfo[] notificationInfo = mockBean.getNotificationInfo();
+    when(anotherMockBean.getNotificationInfo()).thenReturn(notificationInfo);
     String anotherTenuredSpaceName = "G1 Old Gen";
     when(anotherMockBean.getMemoryPoolNames()).thenReturn(new String[] {anotherTenuredSpaceName});
 

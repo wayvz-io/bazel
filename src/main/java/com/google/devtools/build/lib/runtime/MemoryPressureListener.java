@@ -86,7 +86,23 @@ final class MemoryPressureListener implements NotificationListener {
     }
 
     MemoryPressureListener memoryPressureListener = new MemoryPressureListener(executor);
-    tenuredGcEmitters.forEach(e -> e.addNotificationListener(memoryPressureListener, null, null));
+    boolean subscribed = false;
+    for (NotificationEmitter emitter : tenuredGcEmitters) {
+      boolean supportsGcNotifications =
+          Arrays.stream(emitter.getNotificationInfo())
+              .flatMap(info -> Arrays.stream(info.getNotifTypes()))
+              .anyMatch(GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION::equals);
+      if (supportsGcNotifications) {
+        emitter.addNotificationListener(memoryPressureListener, null, null);
+        subscribed = true;
+      }
+    }
+    if (!subscribed) {
+      logger.atWarning().log(
+          "Garbage collector MXBeans do not advertise GC notifications. Memory-pressure "
+              + "notifications are disabled, so optional caches cannot be limited based on heap "
+              + "usage and peak memory may be higher.");
+    }
     return memoryPressureListener;
   }
 
