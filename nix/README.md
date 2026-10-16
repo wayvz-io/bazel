@@ -98,7 +98,9 @@ For each release:
 6. Inspect runtime closures for accidental compiler dependencies and verify licenses before publishing both closures to the Garage-backed Nix cache.
 7. Update Bombora's pinned input in a separate PR after validation.
 
-The current reference scan retains GCC because an assertion in the native server embeds a GCC header path. Oracle also retains its GraalVM compiler distribution. Investigate those references and recheck the runtime closures before publishing. The baseline closures are approximately 750 MiB for Community and 1.89 GiB for Oracle.
+The runtime packaging step removes compiler header references from the launcher and embedded helpers. Oracle's management library and its Java/JVM shared-library dependencies are packaged beside the native server with relative library paths. Each payload change gets a new install-base key. Nix rejects closures containing the compiler, GraalVM distribution, or untrimmed package.
+
+The resulting runtime closures are approximately 469 MiB for Community and 517 MiB for Oracle, down from 749 MiB and 1.9 GiB. Runtime repackaging is a separate derivation, so changing it can reuse the validated native compilation.
 
 Check all outputs with Oracle evaluation explicitly enabled:
 

@@ -165,7 +165,7 @@ let
       runHook postInstall
     '';
   };
-  nativePackage = package.overrideAttrs (old: {
+  builtPackage = package.overrideAttrs (old: {
     nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.autoPatchelfHook ];
     buildInputs = old.buildInputs ++ [ pkgs.libxcrypt-legacy ];
     # Patch fetched build tools, but never patch the final launcher with its appended ZIP.
@@ -216,5 +216,30 @@ let
           [ lib.licenses.asl20 ] ++ lib.toList graalvm.meta.license;
     };
   });
+  nativePackage =
+    runCommand "native-bazel-${edition}"
+      {
+        inherit (builtPackage) version meta;
+        passthru = builtPackage.passthru // {
+          untrimmed = builtPackage;
+        };
+        # Do not rewrite the launcher ELF after appending its ZIP payload.
+        dontFixup = true;
+    disallowedRequisites = [
+          graalvm
+          pkgs.stdenv.cc.cc
+          builtPackage
+        ];
+      }
+      ''
+        mkdir -p $out/bin $out/nix-support
+        cp -r ${builtPackage}/share $out/share
+        ${python3}/bin/python3 ${./trim-runtime.py} \
+          ${builtPackage}/bin/nbazel $out/bin/nbazel \
+          ${pkgs.stdenv.cc.cc} ${graalvm} \
+          ${pkgs.patchelf}/bin/patchelf ${pkgs.removeReferencesTo}/bin/remove-references-to \
+          > $out/nix-support/depends
+        $out/bin/nbazel --ignore_all_rc_files --output_user_root="$TMPDIR/bazel-version" --batch version
+      '';
 in
 nativePackage
