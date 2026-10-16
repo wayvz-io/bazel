@@ -94,6 +94,11 @@ public final class HighWaterMarkLimiter {
           actual, threshold, remainingStat);
     }
 
+    dropTemporaryCaches();
+  }
+
+  /** Drops temporary caches without attributing the operation to a garbage collection. */
+  public void dropTemporaryCaches() {
     skyframeExecutor.dropUnnecessaryTemporarySkyframeState();
     syscallCache.clear();
   }
