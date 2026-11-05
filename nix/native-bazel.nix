@@ -130,7 +130,7 @@ let
       "--local_resources=memory=16000"
     ];
     bazelRepoCacheFOD = {
-      outputHash = "sha256-8qerxEoCWOt/Lozd0ld4Q3ZeNQvU0HwN5JBzYcitSY4=";
+      outputHash = "sha256-y+W9pU0v9nlMZvcMMU8epXwknzr03S9e9OgB05hGy1c=";
       outputHashAlgo = "sha256";
     };
     installPhase = ''
