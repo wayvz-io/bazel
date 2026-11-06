@@ -6,14 +6,14 @@
 }:
 let
   inherit (pkgs) lib;
-  version = "9.3.0";
+  version = "9.3.1";
   bootstrap = (pkgs.bazel_9.override { inherit version; }).overrideAttrs (old: {
     src = pkgs.runCommand "bazel-${version}-bootstrap-source" { nativeBuildInputs = [ pkgs.unzip ]; } ''
       mkdir -p $out
       unzip -q ${
         pkgs.fetchurl {
           url = "https://github.com/bazelbuild/bazel/releases/download/${version}/bazel-${version}-dist.zip";
-          hash = "sha256-JXRAStotbbvaWLAqqIsXxHl2N5DhjLh1B4xAyEnPZxA=";
+          hash = "sha256-YWntQtUG80ZvrImcwKH/oFcY3s5RLN6cLNXuv06f9MM=";
         }
       } -d $out
     '';
