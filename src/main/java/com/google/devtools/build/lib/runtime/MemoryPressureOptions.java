@@ -34,6 +34,38 @@ import java.util.OptionalInt;
 public final class MemoryPressureOptions extends OptionsBase {
 
   @Option(
+      name = "experimental_native_heap_pressure_monitor",
+      defaultValue = "false",
+      documentationCategory = OptionDocumentationCategory.BUILD_TIME_OPTIMIZATION,
+      effectTags = {OptionEffectTag.HOST_MACHINE_RESOURCE_OPTIMIZATIONS},
+      help =
+          "When GC notifications are unavailable, sample total heap usage once per second during"
+              + " commands and drop temporary caches after three seconds of high usage. Drops are"
+              + " at least 30 seconds apart. Samples do not drive GC-thrashing detection or force"
+              + " GC.")
+  public boolean nativeHeapPressureMonitor;
+
+  @Option(
+      name = "experimental_native_heap_pressure_threshold",
+      defaultValue = "85",
+      converter = PercentageConverter.class,
+      documentationCategory = OptionDocumentationCategory.BUILD_TIME_OPTIMIZATION,
+      effectTags = {OptionEffectTag.HOST_MACHINE_RESOURCE_OPTIMIZATIONS},
+      help =
+          "Total heap usage percentage that triggers experimental sampled cache trimming."
+              + " This includes uncollected garbage; it is not post-GC retained heap usage.")
+  public int nativeHeapPressureThreshold;
+
+  @Option(
+      name = "experimental_native_heap_pressure_max_drops",
+      defaultValue = "3",
+      converter = NonNegativeIntegerConverter.class,
+      documentationCategory = OptionDocumentationCategory.BUILD_TIME_OPTIMIZATION,
+      effectTags = {OptionEffectTag.HOST_MACHINE_RESOURCE_OPTIMIZATIONS},
+      help = "Maximum sampled heap-pressure cache drops per command. Zero disables drops.")
+  public int nativeHeapPressureMaxDrops;
+
+  @Option(
       name = "skyframe_high_water_mark_threshold",
       defaultValue = "85",
       documentationCategory = OptionDocumentationCategory.BUILD_TIME_OPTIMIZATION,

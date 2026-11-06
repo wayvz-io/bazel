@@ -111,9 +111,10 @@ def _bazel_server_native_image_impl(ctx):
     )
 
     binary = ctx.actions.declare_file(ctx.attr.output_path or ctx.attr.executable_name)
-    jdk_library = ctx.actions.declare_file(ctx.attr.jdk_library_path or "libmanagement_ext.so")
+    jdk_library = ctx.actions.declare_file(ctx.attr.jdk_library_path or "libmanagement_ext.so") if ctx.attr.include_management_library else None
+    native_outputs = [binary] + ([jdk_library] if jdk_library else [])
     build_output_json = ctx.actions.declare_file(ctx.attr.name + "/build-output.json")
-    bundle = ctx.actions.declare_file(ctx.attr.name + "/native-image.nib")
+    bundle = ctx.actions.declare_file(ctx.attr.name + "/native-image.nib") if ctx.attr.use_bundle else None
 
     graalvm_files = ctx.attr.graalvm_files[DefaultInfo].files
     cc_toolchain = _resolve_cc_toolchain(ctx)
@@ -142,7 +143,8 @@ def _bazel_server_native_image_impl(ctx):
         args.add("--pgo-instrument")
     elif ctx.files.pgo_profiles:
         args.add_joined(ctx.files.pgo_profiles, join_with = ",", format_joined = "--pgo=%s")
-    args.add(bundle, format = "--bundle-create=%s,dry-run")
+    if ctx.attr.use_bundle:
+        args.add(bundle, format = "--bundle-create=%s,dry-run")
     args.add(build_output_json, format = "-H:BuildOutputJSONFile=%s")
     args.add_joined(
         [ctx.file.reflection_configuration] + generated_reflection_configs,
@@ -187,109 +189,124 @@ def _bazel_server_native_image_impl(ctx):
         ],
     )
     native_image_apply_inputs = depset(
-        direct = [bundle],
+        direct = [bundle] if ctx.attr.use_bundle else [],
         transitive = [
             graalvm_files,
             cc_toolchain.files,
         ],
     )
 
-    ctx.actions.run(
-        executable = ctx.executable.native_image_tool,
-        arguments = [args],
-        inputs = native_image_inputs,
-        outputs = [bundle],
-        env = env,
-        execution_requirements = {requirement: "" for requirement in cc_toolchain.execution_requirements},
-        mnemonic = "BazelNativeImageBundle",
-        progress_message = "Creating Bazel native-image bundle %{label}",
-        toolchain = "@bazel_tools//tools/cpp:toolchain_type",
-    )
+    if not ctx.attr.use_bundle:
+        ctx.actions.run(
+            executable = ctx.executable.native_image_tool,
+            arguments = [args],
+            inputs = native_image_inputs,
+            outputs = native_outputs + [build_output_json],
+            env = env,
+            execution_requirements = {requirement: "" for requirement in cc_toolchain.execution_requirements},
+            mnemonic = "BazelNativeImage",
+            progress_message = "Building Bazel native-image server %{label}",
+            toolchain = "@bazel_tools//tools/cpp:toolchain_type",
+        )
+    else:
+        ctx.actions.run(
+            executable = ctx.executable.native_image_tool,
+            arguments = [args],
+            inputs = native_image_inputs,
+            outputs = [bundle],
+            env = env,
+            execution_requirements = {requirement: "" for requirement in cc_toolchain.execution_requirements},
+            mnemonic = "BazelNativeImageBundle",
+            progress_message = "Creating Bazel native-image bundle %{label}",
+            toolchain = "@bazel_tools//tools/cpp:toolchain_type",
+        )
 
-    apply_args = ctx.actions.args()
-    apply_args.add(ctx.executable.native_image_tool)
-    apply_args.add(bundle)
-    apply_args.add(ctx.attr.executable_name)
-    apply_args.add(binary)
-    apply_args.add(jdk_library)
-    apply_args.add(build_output_json)
+        apply_args = ctx.actions.args()
+        apply_args.add(ctx.executable.native_image_tool)
+        apply_args.add(bundle)
+        apply_args.add(ctx.attr.executable_name)
+        apply_args.add(binary)
+        apply_args.add(jdk_library if jdk_library else "")
+        apply_args.add(build_output_json)
 
-    ctx.actions.run_shell(
-        command = """
-set -eu
+        ctx.actions.run_shell(
+            command = """
+    set -eu
 
-execroot="$PWD"
-native_image_tool="$execroot/$1"
-bundle="$execroot/$2"
-executable_name="$3"
-binary="$4"
-jdk_library="$5"
-build_output_json="$6"
-image_output="$execroot/$(dirname "$build_output_json")/native-image.output"
+    execroot="$PWD"
+    native_image_tool="$execroot/$1"
+    bundle="$execroot/$2"
+    executable_name="$3"
+    binary="$4"
+    jdk_library="$5"
+    build_output_json="$6"
+    image_output="$execroot/$(dirname "$build_output_json")/native-image.output"
 
-chmod -R u+w "$image_output" 2>/dev/null || true
-rm -rf "$image_output"
-trap 'rm -rf "$image_output"' EXIT
+    chmod -R u+w "$image_output" 2>/dev/null || true
+    rm -rf "$image_output"
+    trap 'rm -rf "$image_output"' EXIT
 
-"$native_image_tool" "--bundle-apply=$bundle" -o "$executable_name"
+    "$native_image_tool" "--bundle-apply=$bundle" -o "$executable_name"
 
-image_source="$image_output/default/$executable_name"
-if [ ! -f "$image_source" ]; then
-  echo "native-image bundle did not produce $image_source" >&2
-  find "$image_output" -maxdepth 3 -type f >&2 || true
-  exit 1
-fi
-mv "$image_source" "$binary"
-chmod a+x "$binary"
+    image_source="$image_output/default/$executable_name"
+    if [ ! -f "$image_source" ]; then
+      echo "native-image bundle did not produce $image_source" >&2
+      find "$image_output" -maxdepth 3 -type f >&2 || true
+      exit 1
+    fi
+    mv "$image_source" "$binary"
+    chmod a+x "$binary"
 
-management_source=""
-for candidate in "$image_output/default/libmanagement_ext.so" "$image_output/other/libmanagement_ext.so"; do
-  if [ -f "$candidate" ]; then
-    management_source="$candidate"
-    break
-  fi
-done
-if [ -z "$management_source" ]; then
-  echo "native-image bundle did not produce libmanagement_ext.so" >&2
-  find "$image_output" -maxdepth 3 -type f >&2 || true
-  exit 1
-fi
-mv "$management_source" "$jdk_library"
+    if [ -n "$jdk_library" ]; then
+    management_source=""
+    for candidate in "$image_output/default/libmanagement_ext.so" "$image_output/other/libmanagement_ext.so"; do
+      if [ -f "$candidate" ]; then
+        management_source="$candidate"
+        break
+      fi
+    done
+    if [ -z "$management_source" ]; then
+      echo "native-image bundle did not produce libmanagement_ext.so" >&2
+      find "$image_output" -maxdepth 3 -type f >&2 || true
+      exit 1
+    fi
+    mv "$management_source" "$jdk_library"
+    fi
 
-build_output_source=""
-for candidate in "$image_output/other/build-output.json" "$image_output/default/build-output.json"; do
-  if [ -f "$candidate" ]; then
-    build_output_source="$candidate"
-    break
-  fi
-done
-if [ -z "$build_output_source" ]; then
-  echo "native-image bundle did not produce build-output.json" >&2
-  find "$image_output" -maxdepth 3 -type f >&2 || true
-  exit 1
-fi
-mv "$build_output_source" "$build_output_json"
-""",
-        arguments = [apply_args],
-        inputs = native_image_apply_inputs,
-        tools = [ctx.executable.native_image_tool],
-        outputs = [binary, jdk_library, build_output_json],
-        env = env,
-        execution_requirements = {requirement: "" for requirement in cc_toolchain.execution_requirements},
-        mnemonic = "BazelNativeImage",
-        progress_message = "Building Bazel native-image server %{label}",
-        toolchain = "@bazel_tools//tools/cpp:toolchain_type",
-    )
+    build_output_source=""
+    for candidate in "$image_output/other/build-output.json" "$image_output/default/build-output.json"; do
+      if [ -f "$candidate" ]; then
+        build_output_source="$candidate"
+        break
+      fi
+    done
+    if [ -z "$build_output_source" ]; then
+      echo "native-image bundle did not produce build-output.json" >&2
+      find "$image_output" -maxdepth 3 -type f >&2 || true
+      exit 1
+    fi
+    mv "$build_output_source" "$build_output_json"
+    """,
+            arguments = [apply_args],
+            inputs = native_image_apply_inputs,
+            tools = [ctx.executable.native_image_tool],
+            outputs = native_outputs + [build_output_json],
+            env = env,
+            execution_requirements = {requirement: "" for requirement in cc_toolchain.execution_requirements},
+            mnemonic = "BazelNativeImage",
+            progress_message = "Building Bazel native-image server %{label}",
+            toolchain = "@bazel_tools//tools/cpp:toolchain_type",
+        )
 
     return [
         DefaultInfo(
             executable = binary,
-            files = depset([binary, jdk_library]),
+            files = depset(native_outputs),
         ),
         OutputGroupInfo(
             native_image_diagnostics = depset([build_output_json]),
-            native_image_bundle = depset([bundle]),
-            native_image_output = depset([binary, jdk_library, build_output_json]),
+            native_image_bundle = depset([bundle] if ctx.attr.use_bundle else []),
+            native_image_output = depset(native_outputs + [build_output_json]),
         ),
     ]
 
@@ -305,6 +322,10 @@ bazel_server_native_image = rule(
         ),
         "graalvm_files": attr.label(
             mandatory = True,
+        ),
+        "include_management_library": attr.bool(
+            default = True,
+            doc = "Whether this compiler emits libmanagement_ext.so beside the native image.",
         ),
         "include_resources": attr.string(
             default = ".*",
@@ -348,6 +369,10 @@ bazel_server_native_image = rule(
             ],
         ),
         "parallelism": attr.int(),
+        "use_bundle": attr.bool(
+            default = True,
+            doc = "Build through a portable Native Image bundle. Disable for Nix store inputs.",
+        ),
         "reflection_configuration": attr.label(
             allow_single_file = [".json"],
             mandatory = True,

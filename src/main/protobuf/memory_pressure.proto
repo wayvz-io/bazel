@@ -46,4 +46,7 @@ message MemoryPressureStats {
 
   // Peak point in full_gc_fraction_point. Precomputed for convenient querying.
   FullGcFractionPoint peak_full_gc_fraction_point = 6;
+
+  // Cache drops caused by sampled total heap pressure, not by a GC notification.
+  int32 sampled_heap_drops = 7;
 }

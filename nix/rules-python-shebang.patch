@@ -1,0 +1,6 @@
+diff --git a/python/private/py_runtime_info.bzl b/python/private/py_runtime_info.bzl
+--- a/python/private/py_runtime_info.bzl
++++ b/python/private/py_runtime_info.bzl
+@@ -16,1 +16,1 @@
+-DEFAULT_STUB_SHEBANG = "#!/usr/bin/env python3"
++DEFAULT_STUB_SHEBANG = "#!@python@"

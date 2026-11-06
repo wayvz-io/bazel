@@ -34,6 +34,7 @@ public final class MemoryPressureModule extends BlazeModule {
   // Null between commands.
   @Nullable private HighWaterMarkLimiter highWaterMarkLimiter;
   @Nullable private EventBus eventBus;
+  @Nullable private HeapPressureMonitor heapPressureMonitor;
 
   @Override
   public ImmutableList<Class<? extends OptionsBase>> getCommonCommandOptions() {
@@ -52,6 +53,12 @@ public final class MemoryPressureModule extends BlazeModule {
         new HighWaterMarkLimiter(env.getSkyframeExecutor(), env.getSyscallCache(), options);
     eventBus.register(this);
     eventBus.register(highWaterMarkLimiter);
+    if (options.nativeHeapPressureMonitor
+        && options.nativeHeapPressureMaxDrops > 0
+        && !memoryPressureListener.hasGcNotifications()) {
+      heapPressureMonitor =
+          HeapPressureMonitor.start(options, highWaterMarkLimiter::dropTemporaryCaches);
+    }
   }
 
   @Subscribe
@@ -61,7 +68,11 @@ public final class MemoryPressureModule extends BlazeModule {
 
   @Override
   public void afterCommand() {
+    if (heapPressureMonitor != null) {
+      heapPressureMonitor.close();
+    }
     postStats();
+    heapPressureMonitor = null;
     memoryPressureListener.reset();
     eventBus = null;
     highWaterMarkLimiter = null;
@@ -82,6 +93,10 @@ public final class MemoryPressureModule extends BlazeModule {
     }
     MemoryPressureStats.Builder memoryPressureStatsBuilder = MemoryPressureStats.newBuilder();
     highWaterMarkLimiter.populateStats(memoryPressureStatsBuilder);
+    var heapPressureMonitor = this.heapPressureMonitor;
+    if (heapPressureMonitor != null) {
+      memoryPressureStatsBuilder.setSampledHeapDrops(heapPressureMonitor.drops());
+    }
     memoryPressureListener.populateStats(memoryPressureStatsBuilder);
     eventBus.post(memoryPressureStatsBuilder.build());
   }
